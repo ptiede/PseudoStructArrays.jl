@@ -148,15 +148,22 @@ end
         # The element type should be isbits
         @test isbits(psa[1])
         
-        # Check type inference
-        @inferred psa[1]
-        @inferred psa[1].x
+        # Check type inference for 1D case
+        @inferred getindex(psa, 1)
+        @inferred setindex!(psa, Point3D(1.0, 2.0, 3.0), 1)
+        @inferred getproperty(psa, :x)
+        @inferred size(psa)
+        @inferred length(psa)
+        @inferred fieldview(psa, 1)
         
         # 2D case
         data2d = reshape(collect(1.0:24.0), 3, 4, 2)
         psa2d = PseudoStructArray{Point2D{Float64}}(data2d)
-        @inferred psa2d[1, 1]
-        @inferred psa2d[2, 3]
+        @inferred getindex(psa2d, 1, 1)
+        @inferred getindex(psa2d, 2, 3)
+        @inferred setindex!(psa2d, Point2D(1.0, 2.0), 1, 1)
+        @inferred size(psa2d)
+        @inferred fieldview(psa2d, 1)
     end
     
     @testset "Bounds checking" begin

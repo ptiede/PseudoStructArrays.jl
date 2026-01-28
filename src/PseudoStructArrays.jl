@@ -2,6 +2,10 @@ module PseudoStructArrays
 
 export PseudoStructArray, fieldview
 
+const PRIMITIVES = Union{Bool, Int8, Int16, Int32, Int64, Int128,
+                         UInt8, UInt16, UInt32, UInt64, UInt128,
+                         Float16, Float32, Float64}
+
 """
     nfields_static(::Type{T}) -> Int
 
@@ -16,6 +20,7 @@ Check that all fields of T have the same type and return that type.
 Throws an error if fields are not homogeneous.
 """
 @generated function fieldtype_homogeneous(::Type{T}) where {T}
+    T <: PRIMITIVES && return :($T)
     nf = fieldcount(T)
     nf == 0 && error("Type $T has no fields")
     ft = fieldtype(T, 1)
@@ -86,6 +91,9 @@ struct PseudoStructArray{T, N, A<:AbstractArray, C<:NamedTuple} <: AbstractArray
     function PseudoStructArray{T}(parent::A) where {T, A<:AbstractArray}
         # If T is a UnionAll (e.g., Point2D instead of Point2D{Float64}),
         # try to concretize it from the array element type
+        T <: PRIMITIVES && return parent
+
+
         if T isa UnionAll
             S = eltype(parent)
             ConcreteT = _concretize_eltype(T, S)
@@ -184,12 +192,26 @@ Base.@propagate_inbounds function Base.setindex!(psa::PseudoStructArray{T, N}, v
 end
 
 # Similar - create a new PseudoStructArray with the same structure
-function Base.similar(psa::PseudoStructArray{T, N}, ::Type{T2}, dims::Dims) where {T, N, T2}
-    NF = nfields_static(T2)
-    FT = fieldtype_homogeneous(T2)
-    new_parent = similar(parent(psa), FT, (dims..., NF))
-    return PseudoStructArray{T2}(new_parent)
+# For non-struct types (scalars like Float64), fall back to a regular Array
+function Base.similar(psa::PseudoStructArray, ::Type{T2}, dims::Dims) where {T2}
+    if _isnonemptystructtype(T2)
+        NF = nfields_static(T2)
+        FT = fieldtype_homogeneous(T2)
+        new_parent = similar(parent(psa), FT, (dims..., NF))
+        return PseudoStructArray{T2}(new_parent)
+    else
+        # For primitive types (Float64, Int, etc.), return a regular Array
+        return similar(parent(psa), T2, dims)
+    end
 end
+
+"""
+    _isnonemptystructtype(::Type{T}) -> Bool
+
+Check if type T is a struct type with at least one field.
+This mirrors StructArrays.isnonemptystructtype.
+"""
+_isnonemptystructtype(::Type{T}) where {T} = isstructtype(T) && fieldcount(T) != 0
 
 function Base.similar(psa::PseudoStructArray{T, N}) where {T, N}
     similar(psa, T, size(psa))
@@ -197,6 +219,31 @@ end
 
 # IndexStyle - forward from parent array
 Base.IndexStyle(::Type{<:PseudoStructArray{T, N, A, C}}) where {T, N, A, C} = Base.IndexStyle(A)
+
+# ============================================================================
+# Broadcasting interface
+# ============================================================================
+
+struct PseudoStructArrayStyle{N} <: Broadcast.AbstractArrayStyle{N} end
+
+# Style constructors
+PseudoStructArrayStyle(::Val{N}) where {N} = PseudoStructArrayStyle{N}()
+PseudoStructArrayStyle{M}(::Val{N}) where {M, N} = PseudoStructArrayStyle{N}()
+
+# Register the broadcast style for PseudoStructArray
+Base.BroadcastStyle(::Type{<:PseudoStructArray{T, N}}) where {T, N} = PseudoStructArrayStyle{N}()
+
+# When combining with DefaultArrayStyle, PseudoStructArrayStyle wins (raises)
+Base.BroadcastStyle(::PseudoStructArrayStyle{N}, ::Broadcast.DefaultArrayStyle{M}) where {N, M} = 
+    PseudoStructArrayStyle{max(N, M)}()
+Base.BroadcastStyle(::Broadcast.DefaultArrayStyle{M}, ::PseudoStructArrayStyle{N}) where {N, M} = 
+    PseudoStructArrayStyle{max(N, M)}()
+
+# similar for broadcasting - returns a regular Array since the result eltype
+# is typically not a PseudoStructArray-compatible struct
+function Base.similar(bc::Broadcast.Broadcasted{PseudoStructArrayStyle{N}}, ::Type{ElType}) where {N, ElType}
+    return Array{ElType}(undef, axes(bc))
+end
 
 """
     fieldview(psa::PseudoStructArray, field::Int)
