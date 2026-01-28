@@ -2,9 +2,11 @@ module PseudoStructArrays
 
 export PseudoStructArray, fieldview
 
-const PRIMITIVES = Union{Bool, Int8, Int16, Int32, Int64, Int128,
-                         UInt8, UInt16, UInt32, UInt64, UInt128,
-                         Float16, Float32, Float64}
+const PRIMITIVES = Union{
+    Bool, Int8, Int16, Int32, Int64, Int128,
+    UInt8, UInt16, UInt32, UInt64, UInt128,
+    Float16, Float32, Float64,
+}
 
 """
     nfields_static(::Type{T}) -> Int
@@ -84,11 +86,11 @@ psa = PseudoStructArray{Point3D}(data)
 psa[1]  # Point3D(1.0, 5.0, 9.0)
 ```
 """
-struct PseudoStructArray{T, N, A<:AbstractArray, C<:NamedTuple} <: AbstractArray{T, N}
+struct PseudoStructArray{T, N, A <: AbstractArray, C <: NamedTuple} <: AbstractArray{T, N}
     parent::A
     fieldmap::C  # Maps field names to indices: (x=1, y=2, z=3)
 
-    function PseudoStructArray{T}(parent::A) where {T, A<:AbstractArray}
+    function PseudoStructArray{T}(parent::A) where {T, A <: AbstractArray}
         # If T is a UnionAll (e.g., Point2D instead of Point2D{Float64}),
         # try to concretize it from the array element type
         T <: PRIMITIVES && return parent
@@ -99,7 +101,7 @@ struct PseudoStructArray{T, N, A<:AbstractArray, C<:NamedTuple} <: AbstractArray
             ConcreteT = _concretize_eltype(T, S)
             return PseudoStructArray{ConcreteT}(parent)
         end
-        
+
         isbitstype(T) || error("Element type $T must be isbits")
         NF = nfields_static(T)
         FT = fieldtype_homogeneous(T)
@@ -107,13 +109,13 @@ struct PseudoStructArray{T, N, A<:AbstractArray, C<:NamedTuple} <: AbstractArray
         N >= 0 || error("Parent array must have at least 1 dimension")
         eltype(parent) === FT || error("Element type of parent array ($(eltype(parent))) must match field type ($FT)")
         size(parent, ndims(parent)) == NF || error("Last dimension size ($(size(parent, ndims(parent)))) must match number of fields ($NF)")
-        
+
         # Store field name -> index mapping in a NamedTuple
         names = fieldnames(T)
         indices = ntuple(identity, Val(NF))
         fieldmap = NamedTuple{names}(indices)
-        
-        new{T, N, A, typeof(fieldmap)}(parent, fieldmap)
+
+        return new{T, N, A, typeof(fieldmap)}(parent, fieldmap)
     end
 end
 
@@ -158,7 +160,7 @@ Base.@propagate_inbounds function Base.getindex(psa::PseudoStructArray{T, N}, i:
     @boundscheck checkbounds(psa, i)
     parent_arr = parent(psa)
     stride = length(psa)
-    @inbounds return construct_from_tuple(T, ntuple(n -> parent_arr[i + (n-1) * stride], _nfields(psa)))
+    @inbounds return construct_from_tuple(T, ntuple(n -> parent_arr[i + (n - 1) * stride], _nfields(psa)))
 end
 
 # Cartesian indexing for N-dimensional access
@@ -175,7 +177,7 @@ Base.@propagate_inbounds function Base.setindex!(psa::PseudoStructArray{T, N}, v
     stride = length(psa)
     tup = destruct_to_tuple(v)
     @inbounds for n in 1:_nfields(psa)
-        parent_arr[i + (n-1) * stride] = tup[n]
+        parent_arr[i + (n - 1) * stride] = tup[n]
     end
     return v
 end
@@ -214,7 +216,7 @@ This mirrors StructArrays.isnonemptystructtype.
 _isnonemptystructtype(::Type{T}) where {T} = isstructtype(T) && fieldcount(T) != 0
 
 function Base.similar(psa::PseudoStructArray{T, N}) where {T, N}
-    similar(psa, T, size(psa))
+    return similar(psa, T, size(psa))
 end
 
 # IndexStyle - forward from parent array
@@ -234,9 +236,9 @@ PseudoStructArrayStyle{M}(::Val{N}) where {M, N} = PseudoStructArrayStyle{N}()
 Base.BroadcastStyle(::Type{<:PseudoStructArray{T, N}}) where {T, N} = PseudoStructArrayStyle{N}()
 
 # When combining with DefaultArrayStyle, PseudoStructArrayStyle wins (raises)
-Base.BroadcastStyle(::PseudoStructArrayStyle{N}, ::Broadcast.DefaultArrayStyle{M}) where {N, M} = 
+Base.BroadcastStyle(::PseudoStructArrayStyle{N}, ::Broadcast.DefaultArrayStyle{M}) where {N, M} =
     PseudoStructArrayStyle{max(N, M)}()
-Base.BroadcastStyle(::Broadcast.DefaultArrayStyle{M}, ::PseudoStructArrayStyle{N}) where {N, M} = 
+Base.BroadcastStyle(::Broadcast.DefaultArrayStyle{M}, ::PseudoStructArrayStyle{N}) where {N, M} =
     PseudoStructArrayStyle{max(N, M)}()
 
 # similar for broadcasting - returns a regular Array since the result eltype
@@ -271,7 +273,7 @@ end
 function Base.show(io::IO, ::MIME"text/plain", psa::PseudoStructArray{T, N}) where {T, N}
     print(io, join(size(psa), "×"))
     print(io, " PseudoStructArray{$T, $N}")
-    if !isempty(psa)
+    return if !isempty(psa)
         println(io, ":")
         Base.print_array(io, psa)
     end
